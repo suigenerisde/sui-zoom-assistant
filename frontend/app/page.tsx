@@ -26,6 +26,19 @@ export default function Home() {
             <p className="text-center text-gray-600 mb-8">
               KI-gestützter Assistent für Verkaufsgespräche und Meetings
             </p>
+
+            <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+              <p className="text-center text-blue-800 mb-3">
+                <strong>Demo-Modus verfügbar!</strong> Schau dir das Dashboard mit Beispiel-Daten an:
+              </p>
+              <a
+                href="/demo"
+                className="block w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 text-center"
+              >
+                Demo ansehen
+              </a>
+            </div>
+
             <StartMeetingForm onMeetingStarted={handleMeetingStarted} />
           </div>
         </div>

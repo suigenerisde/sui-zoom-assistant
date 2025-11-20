@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { stopMeeting, getMeetingStatus, getWebSocketUrl } from '@/lib/api'
 import { useWebSocket } from '@/hooks/useWebSocket'
+import { useMockWebSocket } from '@/hooks/useMockWebSocket'
 import TranscriptPanel from './TranscriptPanel'
 import SuggestionsPanel from './SuggestionsPanel'
 import CommandInput from './CommandInput'
@@ -32,11 +33,30 @@ export default function MeetingDashboard({ meetingId, onMeetingStopped }: Meetin
   const [meetingStatus, setMeetingStatus] = useState<any>(null)
   const [isStopping, setIsStopping] = useState(false)
 
-  const wsUrl = getWebSocketUrl(meetingId)
-  const { messages, isConnected } = useWebSocket(wsUrl)
+  // Use mock data for demo mode
+  const isDemoMode = meetingId.includes('demo')
+  const wsUrl = isDemoMode ? 'ws://demo' : getWebSocketUrl(meetingId)
+  const { messages, isConnected } = isDemoMode
+    ? useMockWebSocket(wsUrl)
+    : useWebSocket(wsUrl)
 
   // Fetch initial meeting status
   useEffect(() => {
+    if (isDemoMode) {
+      // Set mock meeting status for demo
+      setMeetingStatus({
+        meeting_id: meetingId,
+        meeting_name: 'Demo: Verkaufsgespräch Max Mustermann',
+        duration_minutes: 15.5,
+        segment_count: 10,
+        speaker_stats: {
+          speaker_0: 5,
+          speaker_1: 5,
+        },
+      })
+      return
+    }
+
     const fetchStatus = async () => {
       try {
         const status = await getMeetingStatus(meetingId)
@@ -50,7 +70,7 @@ export default function MeetingDashboard({ meetingId, onMeetingStopped }: Meetin
     const interval = setInterval(fetchStatus, 5000) // Update every 5 seconds
 
     return () => clearInterval(interval)
-  }, [meetingId])
+  }, [meetingId, isDemoMode])
 
   // Process WebSocket messages
   useEffect(() => {
