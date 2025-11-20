@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  zoom-bot-api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
+      - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
+      - ZOOM_BOT_JID=${ZOOM_BOT_JID}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - N8N_TRANSCRIPT_WEBHOOK=${N8N_TRANSCRIPT_WEBHOOK}
+      - N8N_COMMAND_WEBHOOK=${N8N_COMMAND_WEBHOOK}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - zoom-assistant-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - zoom-assistant-network
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+    depends_on:
+      - zoom-bot-api
+    restart: unless-stopped
+    networks:
+      - zoom-assistant-network
+
+networks:
+  zoom-assistant-network:
+    driver: bridge
+
+volumes:
+  redis-data:
