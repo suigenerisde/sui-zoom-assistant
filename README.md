@@ -83,7 +83,7 @@ sui-zoom-assistant/
 ### 1. Repository klonen
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/suigenerisde/sui-zoom-assistant.git
 cd sui-zoom-assistant
 ```
 
