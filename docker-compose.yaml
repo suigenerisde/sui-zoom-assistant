@@ -23,7 +23,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "8080:8000"
     environment:
       - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
       - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
