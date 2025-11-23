@@ -1,22 +1,22 @@
 version: '3.8'
 
 services:
-  # Zoom Meeting SDK Bot - joins meetings and captures raw audio
-  zoom-bot:
-    build:
-      context: ./zoom-bot
-      dockerfile: Dockerfile
-    platform: linux/amd64
-    environment:
-      - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
-      - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
-    volumes:
-      - audio-socket:/tmp
-    depends_on:
-      - backend
-    restart: unless-stopped
-    networks:
-      - zoom-assistant-network
+  # Zoom Meeting SDK Bot - temporarily disabled (SDK cache issue)
+  # zoom-bot:
+  #   build:
+  #     context: ./zoom-bot
+  #     dockerfile: Dockerfile
+  #   platform: linux/amd64
+  #   environment:
+  #     - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
+  #     - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
+  #   volumes:
+  #     - audio-socket:/tmp
+  #   depends_on:
+  #     - backend
+  #   restart: unless-stopped
+  #   networks:
+  #     - zoom-assistant-network
 
   # Backend API - receives audio from bot, transcribes via Deepgram
   backend:
