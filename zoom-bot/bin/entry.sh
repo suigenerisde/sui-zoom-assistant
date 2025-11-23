@@ -83,7 +83,16 @@ run() {
     exec ./"$BUILD"/zoomsdk $ARGS
 }
 
-build && run;
+build
 
-exit $?
+# Only run if ZOOM_JOIN_URL is set, otherwise wait for commands
+if [[ -n "$ZOOM_JOIN_URL" ]]; then
+    echo "Join URL provided, starting bot..."
+    run
+else
+    echo "No ZOOM_JOIN_URL set. Bot built and ready."
+    echo "Waiting for join commands via API..."
+    # Keep container running
+    tail -f /dev/null
+fi
 
