@@ -53,15 +53,24 @@ setup-pulseaudio() {
 }
 
 build() {
+  echo "=== Build step ==="
+  echo "Looking for binary at: $BUILD/zoomsdk"
+
   # Check if binary already exists (built in Dockerfile)
   if [[ -f "$BUILD/zoomsdk" ]]; then
-    echo "Binary already built, skipping build step"
+    echo "Binary already built at $BUILD/zoomsdk, skipping build step"
+    ls -la "$BUILD/zoomsdk"
     return 0
   fi
 
+  echo "Binary not found, checking build directory..."
+  ls -la build/ 2>/dev/null || echo "build/ does not exist"
+  ls -la build/release/ 2>/dev/null || echo "build/release/ does not exist"
+
   # Configure CMake if this is the first run
+  echo "Running CMake configuration..."
   [[ ! -d "$BUILD" ]] && {
-    cmake -B "$BUILD" -S . --preset release || exit;
+    cmake -B "$BUILD" -S . --preset release || { echo "CMake configure failed!"; exit 1; }
     npm --prefix=client install 2>/dev/null || true
   }
 
@@ -70,7 +79,8 @@ build() {
   [[ ! -f "${LIB}.1" ]] && cp "$LIB"{,.1}
 
   # Build the Source Code
-  cmake --build "$BUILD"
+  echo "Running CMake build..."
+  cmake --build "$BUILD" || { echo "CMake build failed!"; exit 1; }
 }
 
 run() {

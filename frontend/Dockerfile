@@ -15,7 +15,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 COPY package*.json ./
 RUN npm ci
 
-# Copy source files
+# Copy source files (cache bust: 2024-11-23-v2)
 COPY . .
 
 # Build the application
