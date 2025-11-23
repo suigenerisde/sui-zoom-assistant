@@ -3,11 +3,13 @@
   "configurePresets": [
     {
       "name": "debug",
-      "toolchainFile": "/opt/vcpkg/scripts/buildsystems/vcpkg.cmake"
+      "toolchainFile": "/opt/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "binaryDir": "${sourceDir}/build/debug"
     },
     {
       "name": "release",
       "toolchainFile": "/opt/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
