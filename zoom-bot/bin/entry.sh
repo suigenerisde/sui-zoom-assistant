@@ -53,6 +53,15 @@ build() {
 run() {
     export QT_LOGGING_RULES="*.debug=false;*.warning=false"
 
+    # Create cache directories for Zoom SDK
+    mkdir -p /root/.zoomus
+    mkdir -p /root/.zoom
+    mkdir -p /tmp/.zoomus
+    chmod 777 /root/.zoomus /root/.zoom /tmp/.zoomus
+
+    # Set HOME if not set
+    export HOME=/root
+
     # Build CLI arguments from environment variables
     ARGS=""
 
