@@ -4,8 +4,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Set build-time environment variables - hardcoded for production
-ENV NEXT_PUBLIC_API_URL=https://zoom-assistant.suimation.de:9000
-ENV NEXT_PUBLIC_WS_URL=wss://zoom-assistant.suimation.de:9000
+ENV NEXT_PUBLIC_API_URL=https://api.zoom-assistant.suimation.de
+ENV NEXT_PUBLIC_WS_URL=wss://api.zoom-assistant.suimation.de
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
