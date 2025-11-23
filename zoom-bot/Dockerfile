@@ -66,6 +66,10 @@ RUN git clone --depth 1 https://github.com/Microsoft/vcpkg.git \
 
 FROM deps AS build
 
+# Ensure tini is available
+COPY --from=deps /tini /tini
+RUN chmod +x /tini
+
 WORKDIR $cwd
 
 # Set HOME environment variable early - Zoom SDK needs this for cache
