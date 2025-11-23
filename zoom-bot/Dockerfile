@@ -66,6 +66,22 @@ RUN git clone --depth 1 https://github.com/Microsoft/vcpkg.git \
 FROM deps AS build
 
 WORKDIR $cwd
+
+# Download and extract Zoom Meeting SDK
+ENV ZOOM_SDK_VERSION=6.6.10.8600
+RUN mkdir -p lib/zoomsdk \
+    && curl -L "https://zoom.us/client/${ZOOM_SDK_VERSION}/zoom-meeting-sdk-linux_x86_64-${ZOOM_SDK_VERSION}.tar.xz" \
+       -o /tmp/zoom-sdk.tar.xz \
+    && tar -xf /tmp/zoom-sdk.tar.xz -C lib/zoomsdk --strip-components=1 \
+    && rm /tmp/zoom-sdk.tar.xz
+
+# Copy source files
+COPY . .
+
+# Build the project
+RUN cmake --preset release \
+    && cmake --build --preset release
+
 ENTRYPOINT ["/tini", "--", "./bin/entry.sh"]
 
 
