@@ -68,6 +68,14 @@ FROM deps AS build
 
 WORKDIR $cwd
 
+# Set HOME environment variable early - Zoom SDK needs this for cache
+ENV HOME=/root
+
+# Create Zoom SDK cache directories and audio socket directory before anything else
+RUN mkdir -p /root/.zoomsdk /root/.zoomus /root/.zoom /root/.config/zoomus /tmp/.zoomus /tmp/zoom /tmp/audio \
+    && chmod -R 777 /root/.zoomsdk /root/.zoomus /root/.zoom /root/.config/zoomus /tmp/.zoomus /tmp/zoom /tmp/audio \
+    && echo -e "[General]\nsystem.audio.type=default" > /root/.config/zoomus.conf
+
 # Download and extract Zoom Meeting SDK from Supabase
 RUN mkdir -p lib/zoomsdk \
     && curl -L --fail --show-error \

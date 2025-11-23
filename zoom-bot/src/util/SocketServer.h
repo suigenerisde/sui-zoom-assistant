@@ -21,7 +21,7 @@ using namespace std;
 class SocketServer : public Singleton<SocketServer> {
     friend class Singleton<SocketServer>;
 
-    const string c_socketPath = "/tmp/meeting.sock";
+    const string c_socketPath = "/tmp/audio/meeting.sock";
     const int c_bufferSize = 256;
 
     struct sockaddr_un m_addr;

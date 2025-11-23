@@ -18,14 +18,19 @@ setup-zoom-cache() {
   mkdir -p /root/.config/zoomus
   mkdir -p /tmp/.zoomus
   mkdir -p /tmp/zoom
+  mkdir -p /tmp/audio
 
   # Make them all writable
-  chmod -R 777 /root/.zoomsdk /root/.zoomus /root/.zoom /root/.config/zoomus /tmp/.zoomus /tmp/zoom 2>/dev/null || true
+  chmod -R 777 /root/.zoomsdk /root/.zoomus /root/.zoom /root/.config/zoomus /tmp/.zoomus /tmp/zoom /tmp/audio 2>/dev/null || true
 
-  # Create zoomus.conf config file
-  echo -e "[General]\nsystem.audio.type=default" > /root/.config/zoomus.conf
+  # Create zoomus.conf config file (only if it doesn't exist or is empty)
+  if [[ ! -f /root/.config/zoomus.conf ]] || [[ ! -s /root/.config/zoomus.conf ]]; then
+    echo -e "[General]\nsystem.audio.type=default" > /root/.config/zoomus.conf
+  fi
 
-  echo "Zoom SDK cache directories created"
+  echo "Zoom SDK cache directories created:"
+  ls -la /root/.zoomsdk/ 2>/dev/null || echo "  /root/.zoomsdk is empty"
+  ls -la /root/.config/ 2>/dev/null | head -5
 }
 
 setup-pulseaudio() {

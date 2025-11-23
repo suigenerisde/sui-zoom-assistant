@@ -12,8 +12,12 @@ services:
       - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
       - HOME=/root
     volumes:
-      - audio-socket:/tmp
+      # Audio socket for communication with backend
+      - audio-socket:/tmp/audio
+      # All Zoom SDK cache directories - persistent storage
       - zoom-cache:/root/.zoomsdk
+      - zoom-config:/root/.config
+      - zoom-home:/root/.zoomus
     depends_on:
       - backend
     restart: unless-stopped
@@ -32,9 +36,9 @@ services:
       - N8N_TRANSCRIPT_WEBHOOK=${N8N_TRANSCRIPT_WEBHOOK:-}
       - N8N_COMMAND_WEBHOOK=${N8N_COMMAND_WEBHOOK:-}
       - REDIS_URL=redis://redis:6379
-      - AUDIO_SOCKET_PATH=/tmp/meeting.sock
+      - AUDIO_SOCKET_PATH=/tmp/audio/meeting.sock
     volumes:
-      - audio-socket:/tmp
+      - audio-socket:/tmp/audio
     depends_on:
       - redis
     restart: unless-stopped
@@ -77,3 +81,5 @@ volumes:
   redis-data:
   audio-socket:
   zoom-cache:
+  zoom-config:
+  zoom-home:
