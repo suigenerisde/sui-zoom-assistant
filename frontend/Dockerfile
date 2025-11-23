@@ -1,31 +1,39 @@
-FROM node:20-alpine
+# Build stage
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Increase Node.js memory limit for build
-ENV NODE_OPTIONS="--max-old-space-size=4096"
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci
-
-# Copy application files
-COPY . .
-
-# Set build-time environment variables for Next.js
+# Set build-time environment variables
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ARG NEXT_PUBLIC_WS_URL=ws://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Build application (with verbose output)
-RUN npm run build 2>&1 || (echo "Build failed, showing package.json:" && cat package.json && exit 1)
+# Copy package files and install dependencies
+COPY package*.json ./
+RUN npm ci
 
-# Expose port
+# Copy source files
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Production stage
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Copy built application from builder
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
 EXPOSE 3000
 
-# Start application
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
