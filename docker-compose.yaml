@@ -62,8 +62,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-        - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://zoom-assistant.suimation.de}
+        - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-wss://zoom-assistant.suimation.de}
     ports:
       - "3000:3000"
     depends_on:
