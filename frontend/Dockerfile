@@ -2,6 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Increase Node.js memory limit for build
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
 # Copy package files
 COPY package*.json ./
 
@@ -16,12 +19,10 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ARG NEXT_PUBLIC_WS_URL=ws://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
-
-# Skip TypeScript/ESLint errors during build
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Build application
-RUN npm run build
+# Build application (with verbose output)
+RUN npm run build 2>&1 || (echo "Build failed, showing package.json:" && cat package.json && exit 1)
 
 # Expose port
 EXPOSE 3000
