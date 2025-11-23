@@ -12,12 +12,12 @@ from config.settings import settings
 from services.zoom_bot import ZoomBot
 from services.webhook_manager import WebhookManager
 from services.fireflies_service import FirefliesService, FirefliesMeetingMonitor
-from services.local_transcription_service import LocalTranscriptionService
 
 # Lazy import TranscriptionService to avoid Deepgram SDK syntax errors on Python 3.9
 # The Deepgram SDK uses match statements which require Python 3.10+
 if TYPE_CHECKING:
     from services.transcription_service import TranscriptionService
+    from services.local_transcription_service import LocalTranscriptionService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,15 @@ def _get_transcription_service():
         return TranscriptionService
     except (ImportError, SyntaxError) as e:
         logger.warning(f"TranscriptionService not available: {e}")
+        return None
+
+def _get_local_transcription_service():
+    """Lazy load LocalTranscriptionService - requires pyaudio (not available in Docker)"""
+    try:
+        from services.local_transcription_service import LocalTranscriptionService
+        return LocalTranscriptionService
+    except (ImportError, ModuleNotFoundError) as e:
+        logger.warning(f"LocalTranscriptionService not available: {e}")
         return None
 
 
@@ -44,7 +53,7 @@ class MeetingSession:
         self.zoom_bot: Optional[ZoomBot] = None
         self.transcription: Optional[Any] = None  # TranscriptionService (lazy loaded)
         self.fireflies: Optional[FirefliesService] = None
-        self.local_transcription: Optional[LocalTranscriptionService] = None
+        self.local_transcription: Optional[Any] = None  # LocalTranscriptionService (lazy loaded)
 
         # WebSocket connections
         self.websockets: list[WebSocket] = []
@@ -176,7 +185,11 @@ class MeetingManager:
         # Create session
         session = MeetingSession(meeting_id, meeting_name, "local")
 
-        # Initialize local transcription service
+        # Initialize local transcription service (lazy loaded)
+        LocalTranscriptionService = _get_local_transcription_service()
+        if not LocalTranscriptionService:
+            raise ValueError("Local transcription not available - pyaudio not installed")
+
         session.local_transcription = LocalTranscriptionService(
             api_key=api_key,
             on_transcript=lambda segment: self._on_transcript(meeting_id, segment),
