@@ -1,8 +1,8 @@
 """
 Zoom Bot Audio Socket Service
 
-Listens on a Unix socket for raw audio data from the Zoom Meeting SDK Bot
-and forwards it to Deepgram for live transcription.
+Connects to the Unix socket created by the Zoom Meeting SDK Bot
+and forwards audio data to Deepgram for live transcription.
 """
 import asyncio
 import logging
@@ -17,8 +17,11 @@ logger = logging.getLogger(__name__)
 
 class ZoomBotAudioService:
     """
-    Service that receives audio from the Zoom Bot via Unix socket
-    and forwards it to Deepgram for transcription.
+    Service that connects to the Zoom Bot's socket server,
+    receives audio data, and forwards it to Deepgram for transcription.
+
+    The Zoom Bot (C++) creates a Unix socket server at /tmp/audio/meeting.sock
+    This service acts as a CLIENT that connects to that socket.
     """
 
     def __init__(
@@ -32,7 +35,7 @@ class ZoomBotAudioService:
         Initialize the Zoom Bot Audio Service.
 
         Args:
-            socket_path: Path to the Unix socket
+            socket_path: Path to the Unix socket (created by Zoom Bot)
             deepgram_api_key: API key for Deepgram
             on_transcript: Callback for transcript segments
             on_status_change: Callback for status changes
@@ -43,15 +46,15 @@ class ZoomBotAudioService:
         self.on_status_change = on_status_change
 
         self.deepgram_service: Optional[DeepgramTranscriptionService] = None
-        self.server_socket: Optional[socket.socket] = None
         self.client_socket: Optional[socket.socket] = None
         self.is_running = False
+        self.is_connected = False
         self.current_meeting_id: Optional[str] = None
-        self._listen_task: Optional[asyncio.Task] = None
+        self._connect_task: Optional[asyncio.Task] = None
 
     async def start(self, meeting_id: str) -> bool:
         """
-        Start listening for audio from the Zoom Bot.
+        Start the audio service and connect to the Zoom Bot socket.
 
         Args:
             meeting_id: Meeting identifier for this session
@@ -84,10 +87,9 @@ class ZoomBotAudioService:
                 self._notify_status("error_deepgram_connect")
                 return False
 
-            # Start Unix socket listener
-            self._setup_socket()
+            # Start connection loop (will keep trying to connect to bot socket)
             self.is_running = True
-            self._listen_task = asyncio.create_task(self._listen_loop())
+            self._connect_task = asyncio.create_task(self._connect_loop())
 
             logger.info(f"Zoom Bot Audio Service started for meeting {meeting_id}")
             self._notify_status("running")
@@ -98,47 +100,65 @@ class ZoomBotAudioService:
             self._notify_status("error")
             return False
 
-    def _setup_socket(self):
-        """Set up the Unix socket server."""
-        # Remove existing socket file if present
-        if os.path.exists(self.socket_path):
-            os.unlink(self.socket_path)
-
-        self.server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.server_socket.bind(self.socket_path)
-        self.server_socket.listen(1)
-        self.server_socket.setblocking(False)
-
-        logger.info(f"Unix socket server listening on {self.socket_path}")
-
-    async def _listen_loop(self):
-        """Main loop to accept connections and receive audio data."""
-        loop = asyncio.get_event_loop()
+    async def _connect_loop(self):
+        """
+        Main loop that connects to the Zoom Bot socket and receives audio.
+        Keeps trying to connect until stopped.
+        """
+        retry_delay = 1  # Start with 1 second delay
+        max_retry_delay = 10  # Max 10 seconds between retries
 
         try:
             while self.is_running:
                 try:
-                    # Accept connection (non-blocking)
-                    self.client_socket, _ = await loop.sock_accept(self.server_socket)
-                    logger.info("Zoom Bot connected to audio socket")
+                    # Check if socket file exists
+                    if not os.path.exists(self.socket_path):
+                        logger.debug(f"Socket {self.socket_path} not yet available, waiting...")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay = min(retry_delay * 1.5, max_retry_delay)
+                        continue
+
+                    # Try to connect to the socket
+                    logger.info(f"Attempting to connect to Zoom Bot socket: {self.socket_path}")
+
+                    self.client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    self.client_socket.setblocking(False)
+
+                    loop = asyncio.get_event_loop()
+                    await loop.sock_connect(self.client_socket, self.socket_path)
+
+                    logger.info("Connected to Zoom Bot audio socket!")
+                    self.is_connected = True
                     self._notify_status("bot_connected")
+                    retry_delay = 1  # Reset retry delay on successful connection
 
                     # Receive audio data
                     await self._receive_audio_loop()
 
+                except ConnectionRefusedError:
+                    logger.debug(f"Connection refused, Zoom Bot not ready yet")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 1.5, max_retry_delay)
+                except FileNotFoundError:
+                    logger.debug(f"Socket file not found: {self.socket_path}")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 1.5, max_retry_delay)
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.error(f"Socket accept error: {e}")
-                    await asyncio.sleep(1)  # Retry after error
+                    logger.error(f"Socket connection error: {e}")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 1.5, max_retry_delay)
+                finally:
+                    self._close_client_socket()
 
         except asyncio.CancelledError:
-            logger.info("Audio listen loop cancelled")
+            logger.info("Audio connect loop cancelled")
         finally:
-            self._cleanup_socket()
+            self._close_client_socket()
 
     async def _receive_audio_loop(self):
-        """Receive audio data from connected client and forward to Deepgram."""
+        """Receive audio data from Zoom Bot and forward to Deepgram."""
         loop = asyncio.get_event_loop()
         buffer_size = 4096  # Match Zoom Bot's buffer size
 
@@ -150,6 +170,7 @@ class ZoomBotAudioService:
 
                     if not data:
                         logger.info("Zoom Bot disconnected from audio socket")
+                        self.is_connected = False
                         self._notify_status("bot_disconnected")
                         break
 
@@ -164,57 +185,42 @@ class ZoomBotAudioService:
                     break
 
         finally:
-            if self.client_socket:
-                self.client_socket.close()
-                self.client_socket = None
+            self.is_connected = False
 
-    async def stop(self):
-        """Stop the audio service."""
-        logger.info("Stopping Zoom Bot Audio Service")
-        self.is_running = False
-
-        # Cancel listen task
-        if self._listen_task:
-            self._listen_task.cancel()
-            try:
-                await self._listen_task
-            except asyncio.CancelledError:
-                pass
-            self._listen_task = None
-
-        # Disconnect from Deepgram
-        if self.deepgram_service:
-            await self.deepgram_service.disconnect()
-            self.deepgram_service = None
-
-        # Cleanup socket
-        self._cleanup_socket()
-
-        self._notify_status("stopped")
-        logger.info("Zoom Bot Audio Service stopped")
-
-    def _cleanup_socket(self):
-        """Clean up socket resources."""
+    def _close_client_socket(self):
+        """Close the client socket."""
         if self.client_socket:
             try:
                 self.client_socket.close()
             except:
                 pass
             self.client_socket = None
+            self.is_connected = False
 
-        if self.server_socket:
-            try:
-                self.server_socket.close()
-            except:
-                pass
-            self.server_socket = None
+    async def stop(self):
+        """Stop the audio service."""
+        logger.info("Stopping Zoom Bot Audio Service")
+        self.is_running = False
 
-        # Remove socket file
-        if os.path.exists(self.socket_path):
+        # Cancel connect task
+        if self._connect_task:
+            self._connect_task.cancel()
             try:
-                os.unlink(self.socket_path)
-            except:
+                await self._connect_task
+            except asyncio.CancelledError:
                 pass
+            self._connect_task = None
+
+        # Disconnect from Deepgram
+        if self.deepgram_service:
+            await self.deepgram_service.disconnect()
+            self.deepgram_service = None
+
+        # Close socket
+        self._close_client_socket()
+
+        self._notify_status("stopped")
+        logger.info("Zoom Bot Audio Service stopped")
 
     def _on_deepgram_status(self, status: str):
         """Handle Deepgram status changes."""
@@ -237,7 +243,7 @@ class ZoomBotAudioService:
             "running": self.is_running,
             "meeting_id": self.current_meeting_id,
             "socket_path": self.socket_path,
-            "bot_connected": self.client_socket is not None,
+            "bot_connected": self.is_connected,
             "deepgram_connected": (
                 self.deepgram_service.is_connected
                 if self.deepgram_service
