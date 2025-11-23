@@ -68,11 +68,10 @@ FROM deps AS build
 
 WORKDIR $cwd
 
-# Download and extract Zoom Meeting SDK
-ENV ZOOM_SDK_VERSION=6.6.10.8600
+# Download and extract Zoom Meeting SDK from Supabase
 RUN mkdir -p lib/zoomsdk \
     && curl -L --fail --show-error \
-       "https://cdn.zoom.us/prod/${ZOOM_SDK_VERSION}/zoom-meeting-sdk-linux_x86_64-${ZOOM_SDK_VERSION}.tar.xz" \
+       "https://supabase.suimation.de/storage/v1/object/public/CoolifyInputs/zoom-meeting-sdk-linux_x86_64-6.6.10.8600.tar.xz" \
        -o /tmp/zoom-sdk.tar.xz \
     && xz -d /tmp/zoom-sdk.tar.xz \
     && tar -xf /tmp/zoom-sdk.tar -C lib/zoomsdk --strip-components=1 \
