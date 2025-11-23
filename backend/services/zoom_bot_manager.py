@@ -70,7 +70,8 @@ class ZoomBotManager:
         """
         self.on_transcript = on_transcript
         self.on_status_change = on_status_change
-        self.socket_path = socket_path
+        # Socket path must match C++ SocketServer: /tmp/audio/meeting.sock
+        self.socket_path = "/tmp/audio/meeting.sock"
 
         self.audio_service: Optional[ZoomBotAudioService] = None
         self.current_session: Optional[MeetingSession] = None
@@ -148,10 +149,36 @@ class ZoomBotManager:
             bot_env["ZOOM_CLIENT_SECRET"] = self.zoom_client_secret or ""
             bot_env["ZOOM_JOIN_URL"] = join_url
 
-            # Note: In production with Docker, use docker-compose or docker run
-            # For now, we just log that the bot should be started
-            logger.info(f"Bot should join meeting: {join_url}")
-            logger.info("In Docker mode, the zoom-bot container handles this automatically")
+            # Start the Zoom Bot container with the join URL
+            # The zoom-bot container is already running, we use docker exec to start the bot
+            zoom_bot_container = self._find_zoom_bot_container()
+            if zoom_bot_container:
+                logger.info(f"Starting Zoom Bot in container {zoom_bot_container}")
+                try:
+                    # Execute the run command in the zoom-bot container
+                    cmd = [
+                        "docker", "exec",
+                        "-e", f"ZOOM_JOIN_URL={join_url}",
+                        "-d",  # Detached mode
+                        zoom_bot_container,
+                        "/bin/bash", "-c",
+                        "cd /app && ./build/release/zoomsdk "
+                        f"--client-id={self.zoom_client_id} "
+                        f"--client-secret={self.zoom_client_secret} "
+                        f"--join-url={join_url}"
+                    ]
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        logger.info("Zoom Bot started successfully")
+                    else:
+                        logger.error(f"Failed to start Zoom Bot: {result.stderr}")
+                except subprocess.TimeoutExpired:
+                    logger.warning("Docker exec timed out - bot may still be starting")
+                except Exception as e:
+                    logger.error(f"Error starting Zoom Bot: {e}")
+            else:
+                logger.warning("Zoom Bot container not found - bot will not join meeting")
+                logger.info("Make sure zoom-bot container is running via docker-compose")
 
             self.current_session.status = BotStatus.TRANSCRIBING
             self._notify_status("transcribing")
@@ -286,6 +313,23 @@ class ZoomBotManager:
         match = re.search(r'/[js]/(\d+)', join_url)
         if match:
             return match.group(1)
+        return None
+
+    def _find_zoom_bot_container(self) -> Optional[str]:
+        """Find the running zoom-bot container name."""
+        try:
+            result = subprocess.run(
+                ["docker", "ps", "--filter", "name=zoom-bot", "--format", "{{.Names}}"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                container_name = result.stdout.strip().split('\n')[0]
+                logger.info(f"Found zoom-bot container: {container_name}")
+                return container_name
+        except Exception as e:
+            logger.error(f"Error finding zoom-bot container: {e}")
         return None
 
     def get_status(self) -> Dict[str, Any]:

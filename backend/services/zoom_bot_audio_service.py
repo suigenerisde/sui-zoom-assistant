@@ -23,7 +23,7 @@ class ZoomBotAudioService:
 
     def __init__(
         self,
-        socket_path: str = "/tmp/meeting.sock",
+        socket_path: str = "/tmp/audio/meeting.sock",
         deepgram_api_key: Optional[str] = None,
         on_transcript: Optional[Callable[[Dict[str, Any]], None]] = None,
         on_status_change: Optional[Callable[[str], None]] = None,
