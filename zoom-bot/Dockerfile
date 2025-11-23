@@ -74,8 +74,9 @@ RUN mkdir -p lib/zoomsdk \
        "https://supabase.suimation.de/storage/v1/object/public/CoolifyInputs/zoom-meeting-sdk-linux_x86_64-6.6.10.8600.tar.xz" \
        -o /tmp/zoom-sdk.tar.xz \
     && xz -d /tmp/zoom-sdk.tar.xz \
-    && tar -xf /tmp/zoom-sdk.tar -C lib/zoomsdk --strip-components=1 \
-    && rm /tmp/zoom-sdk.tar
+    && tar -xf /tmp/zoom-sdk.tar -C lib/zoomsdk \
+    && rm /tmp/zoom-sdk.tar \
+    && ls -la lib/zoomsdk/
 
 # Copy source files
 COPY . .
