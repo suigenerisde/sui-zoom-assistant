@@ -9,20 +9,24 @@ import json
 
 logger = logging.getLogger(__name__)
 
-# Deepgram requires Python 3.10+ - lazy import to avoid syntax errors on 3.9
-Deepgram = None
+# Deepgram SDK v3 imports
+DeepgramClient = None
+LiveTranscriptionEvents = None
+LiveOptions = None
 
 def _get_deepgram():
-    """Lazy load Deepgram SDK - requires Python 3.10+"""
-    global Deepgram
-    if Deepgram is None:
+    """Lazy load Deepgram SDK v3"""
+    global DeepgramClient, LiveTranscriptionEvents, LiveOptions
+    if DeepgramClient is None:
         try:
-            from deepgram import Deepgram as DG
-            Deepgram = DG
+            from deepgram import DeepgramClient as DGClient, LiveTranscriptionEvents as LTE, LiveOptions as LO
+            DeepgramClient = DGClient
+            LiveTranscriptionEvents = LTE
+            LiveOptions = LO
         except (ImportError, SyntaxError) as e:
-            logger.warning(f"Deepgram SDK not available: {e}. Requires Python 3.10+")
+            logger.warning(f"Deepgram SDK not available: {e}")
             return None
-    return Deepgram
+    return DeepgramClient
 
 
 class TranscriptionService:
@@ -47,16 +51,16 @@ class TranscriptionService:
             meeting_id: Unique meeting identifier
             on_transcript: Callback function for transcript events
         """
-        DG = _get_deepgram()
-        if not DG:
-            raise ImportError("Deepgram SDK not available. Requires Python 3.10+")
+        DGClient = _get_deepgram()
+        if not DGClient:
+            raise ImportError("Deepgram SDK not available")
 
         self.api_key = api_key
         self.meeting_id = meeting_id
         self.on_transcript = on_transcript
 
-        self.dg_client = DG(api_key)
-        self.websocket = None
+        self.dg_client = DGClient(api_key)
+        self.connection = None
         self.is_streaming = False
 
         # Transcript tracking
@@ -76,37 +80,49 @@ class TranscriptionService:
         try:
             logger.info("Starting Deepgram streaming connection")
 
-            # Deepgram streaming options
-            options = {
-                "model": "nova-2",  # Best quality model
-                "language": "de",  # German
-                "punctuate": True,
-                "interim_results": True,  # Get live results before finalization
-                "utterances": True,  # Split by utterances/sentences
-                "diarize": True,  # Speaker detection
-                "smart_format": True,  # Auto-format numbers, dates, etc.
-            }
+            # Deepgram SDK v3 options
+            options = LiveOptions(
+                model="nova-2",
+                language="de",
+                smart_format=True,
+                interim_results=True,
+                utterance_end_ms=1000,
+                vad_events=True,
+                encoding="linear16",
+                sample_rate=16000,
+                channels=1,
+            )
 
-            # Create WebSocket connection
-            self.websocket = await self.dg_client.transcription.live(options)
+            # Create live connection (SDK v3 API)
+            self.connection = self.dg_client.listen.live.v("1")
 
             # Set up event handlers
-            self.websocket.registerHandler(
-                self.websocket.event.CLOSE,
-                lambda _: self._on_close()
-            )
-            self.websocket.registerHandler(
-                self.websocket.event.TRANSCRIPT_RECEIVED,
-                lambda data: self._on_message(data)
-            )
+            self.connection.on(LiveTranscriptionEvents.Open, self._on_open)
+            self.connection.on(LiveTranscriptionEvents.Transcript, self._on_message)
+            self.connection.on(LiveTranscriptionEvents.Error, self._on_error)
+            self.connection.on(LiveTranscriptionEvents.Close, self._on_close)
 
-            self.is_streaming = True
-            logger.info("Deepgram streaming connection established")
+            # Start connection
+            if await self.connection.start(options):
+                self.is_streaming = True
+                logger.info("Deepgram streaming connection established")
+            else:
+                logger.error("Failed to start Deepgram connection")
+                self.is_streaming = False
 
         except Exception as e:
             logger.error(f"Failed to start Deepgram streaming: {e}")
             self.is_streaming = False
             raise
+
+    def _on_open(self, *args, **kwargs):
+        """Handle connection open event"""
+        logger.info("Deepgram WebSocket connection opened")
+
+    def _on_error(self, *args, **kwargs):
+        """Handle error event"""
+        error = kwargs.get('error') or (args[1] if len(args) > 1 else "Unknown error")
+        logger.error(f"Deepgram error: {error}")
 
     async def send_audio(self, audio_chunk: bytes):
         """
@@ -115,42 +131,44 @@ class TranscriptionService:
         Args:
             audio_chunk: Audio data in PCM format (16kHz, mono)
         """
-        if not self.is_streaming or not self.websocket:
+        if not self.is_streaming or not self.connection:
             logger.warning("Cannot send audio: Streaming not active")
             return
 
         try:
-            await self.websocket.send(audio_chunk)
+            await self.connection.send(audio_chunk)
         except Exception as e:
             logger.error(f"Error sending audio to Deepgram: {e}")
 
-    def _on_message(self, data: dict):
+    def _on_message(self, *args, **kwargs):
         """
-        Handle incoming transcription results from Deepgram
+        Handle incoming transcription results from Deepgram SDK v3
 
         Args:
-            data: Deepgram transcription result
+            args/kwargs: Deepgram event data
         """
         try:
-            # Parse Deepgram response
-            transcript_data = json.loads(data) if isinstance(data, str) else data
+            # SDK v3: result is in kwargs or args[1]
+            result = kwargs.get('result') or (args[1] if len(args) > 1 else None)
 
-            # Extract transcript information
-            channel = transcript_data.get("channel", {})
-            alternatives = channel.get("alternatives", [])
+            if result is None:
+                return
+
+            # Get channel and alternatives
+            channel = result.channel
+            alternatives = channel.alternatives
 
             if not alternatives:
                 return
 
-            alternative = alternatives[0]
-            transcript = alternative.get("transcript", "").strip()
+            transcript = alternatives[0].transcript
 
-            if not transcript:
+            if not transcript or not transcript.strip():
                 return
 
-            is_final = transcript_data.get("is_final", False)
-            speech_final = transcript_data.get("speech_final", False)
-            confidence = alternative.get("confidence", 0.0)
+            is_final = result.is_final
+            speech_final = result.speech_final
+            confidence = alternatives[0].confidence if hasattr(alternatives[0], 'confidence') else 0.0
 
             # Only process final transcripts for production use
             if not is_final:
@@ -158,10 +176,10 @@ class TranscriptionService:
                 return
 
             # Get speaker information if available
-            words = alternative.get("words", [])
+            words = alternatives[0].words if hasattr(alternatives[0], 'words') else []
             speaker = None
-            if words and "speaker" in words[0]:
-                speaker = f"speaker_{words[0]['speaker']}"
+            if words and hasattr(words[0], 'speaker'):
+                speaker = f"speaker_{words[0].speaker}"
 
             # Create transcript segment
             segment = {
@@ -174,7 +192,7 @@ class TranscriptionService:
                 "confidence": confidence,
                 "context": {
                     "previous_segments": self.transcript_buffer[-5:],
-                    "duration_seconds": 0  # TODO: Track actual duration
+                    "duration_seconds": 0
                 }
             }
 
@@ -197,7 +215,7 @@ class TranscriptionService:
         except Exception as e:
             logger.error(f"Error processing transcription result: {e}")
 
-    def _on_close(self):
+    def _on_close(self, *args, **kwargs):
         """Handle WebSocket connection close"""
         logger.info("Deepgram WebSocket connection closed")
         self.is_streaming = False
@@ -207,10 +225,11 @@ class TranscriptionService:
         try:
             logger.info("Stopping Deepgram streaming")
 
-            if self.websocket:
-                await self.websocket.finish()
+            if self.connection:
+                await self.connection.finish()
 
             self.is_streaming = False
+            self.connection = None
             logger.info("Deepgram streaming stopped")
 
         except Exception as e:
