@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# directory for CMake output
-BUILD=build
+# directory for CMake output (matches Dockerfile release preset)
+BUILD=build/release
 
 # directory for application output
 mkdir -p out
@@ -53,9 +53,15 @@ setup-pulseaudio() {
 }
 
 build() {
+  # Check if binary already exists (built in Dockerfile)
+  if [[ -f "$BUILD/zoomsdk" ]]; then
+    echo "Binary already built, skipping build step"
+    return 0
+  fi
+
   # Configure CMake if this is the first run
   [[ ! -d "$BUILD" ]] && {
-    cmake -B "$BUILD" -S . --preset debug || exit;
+    cmake -B "$BUILD" -S . --preset release || exit;
     npm --prefix=client install 2>/dev/null || true
   }
 
@@ -110,8 +116,18 @@ run() {
     echo "Cache dirs exist:"
     ls -la /root/.zoomsdk /root/.zoomus 2>/dev/null || echo "  (creating on first run)"
 
+    # Check if binary exists
+    if [[ ! -f "$BUILD/zoomsdk" ]]; then
+        echo "ERROR: Binary not found at $BUILD/zoomsdk"
+        echo "Contents of build directory:"
+        ls -la build/ 2>/dev/null || echo "  build/ does not exist"
+        ls -la build/release/ 2>/dev/null || echo "  build/release/ does not exist"
+        exit 1
+    fi
+
     # Run with verbose output
-    exec ./"$BUILD"/zoomsdk $ARGS
+    echo "Running: $BUILD/zoomsdk $ARGS"
+    exec "./$BUILD/zoomsdk" $ARGS
 }
 
 # First, setup cache directories (needed even during build for SDK initialization)
