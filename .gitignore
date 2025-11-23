@@ -27,6 +27,12 @@ wheels/
 .env
 .env.local
 .env.*.local
+*/.env
+zoom-bot/.env
+
+# Zoom SDK (too large for git, download separately)
+zoom-bot/lib/zoomsdk/
+!zoom-bot/lib/zoomsdk/.gitkeep
 
 # IDE
 .vscode/

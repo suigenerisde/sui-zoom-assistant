@@ -3,17 +3,32 @@ Meeting Manager - Orchestrates all meeting-related services
 """
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING, Any
 from datetime import datetime
 import uuid
 from fastapi import WebSocket
 
 from config.settings import settings
 from services.zoom_bot import ZoomBot
-from services.transcription_service import TranscriptionService
 from services.webhook_manager import WebhookManager
+from services.fireflies_service import FirefliesService, FirefliesMeetingMonitor
+from services.local_transcription_service import LocalTranscriptionService
+
+# Lazy import TranscriptionService to avoid Deepgram SDK syntax errors on Python 3.9
+# The Deepgram SDK uses match statements which require Python 3.10+
+if TYPE_CHECKING:
+    from services.transcription_service import TranscriptionService
 
 logger = logging.getLogger(__name__)
+
+def _get_transcription_service():
+    """Lazy load TranscriptionService to avoid Python 3.9 import issues"""
+    try:
+        from services.transcription_service import TranscriptionService
+        return TranscriptionService
+    except (ImportError, SyntaxError) as e:
+        logger.warning(f"TranscriptionService not available: {e}")
+        return None
 
 
 class MeetingSession:
@@ -27,7 +42,9 @@ class MeetingSession:
 
         # Services
         self.zoom_bot: Optional[ZoomBot] = None
-        self.transcription: Optional[TranscriptionService] = None
+        self.transcription: Optional[Any] = None  # TranscriptionService (lazy loaded)
+        self.fireflies: Optional[FirefliesService] = None
+        self.local_transcription: Optional[LocalTranscriptionService] = None
 
         # WebSocket connections
         self.websockets: list[WebSocket] = []
@@ -35,6 +52,9 @@ class MeetingSession:
         # Stats
         self.segment_count = 0
         self.speaker_stats: Dict[str, int] = {}
+
+        # Fireflies-specific
+        self.fireflies_transcript_id: Optional[str] = None
 
     def get_duration_minutes(self) -> float:
         """Get meeting duration in minutes"""
@@ -47,8 +67,8 @@ class MeetingManager:
     Central manager for all meeting operations
 
     Coordinates:
-    - Zoom bot lifecycle
-    - Transcription service
+    - Zoom bot lifecycle (legacy) OR Fireflies integration
+    - Transcription service (Deepgram or Fireflies)
     - Webhook communications
     - WebSocket connections to frontend
     """
@@ -56,8 +76,10 @@ class MeetingManager:
     def __init__(self):
         self.sessions: Dict[str, MeetingSession] = {}
         self.webhook_manager: Optional[WebhookManager] = None
+        self.fireflies_monitor: Optional[FirefliesMeetingMonitor] = None
+        self.use_fireflies = settings.fireflies_enabled and settings.fireflies_api_key
 
-        logger.info("MeetingManager initialized")
+        logger.info(f"MeetingManager initialized (Fireflies: {self.use_fireflies})")
 
     async def initialize(self):
         """Initialize manager and dependencies"""
@@ -68,11 +90,25 @@ class MeetingManager:
         )
         await self.webhook_manager.initialize()
 
+        # Initialize Fireflies monitor if enabled
+        if self.use_fireflies:
+            self.fireflies_monitor = FirefliesMeetingMonitor(
+                api_key=settings.fireflies_api_key,
+                on_meeting_found=self._on_fireflies_meeting_found,
+                poll_interval=settings.fireflies_poll_interval
+            )
+            await self.fireflies_monitor.start_monitoring()
+            logger.info("Fireflies meeting monitor started")
+
         logger.info("MeetingManager ready")
 
     async def cleanup(self):
         """Cleanup all active sessions and connections"""
         logger.info("Cleaning up MeetingManager...")
+
+        # Stop Fireflies monitor
+        if self.fireflies_monitor:
+            await self.fireflies_monitor.stop_monitoring()
 
         # Stop all active meetings
         for meeting_id in list(self.sessions.keys()):
@@ -83,6 +119,147 @@ class MeetingManager:
             await self.webhook_manager.close()
 
         logger.info("MeetingManager cleanup complete")
+
+    async def _on_fireflies_meeting_found(self, meeting: dict):
+        """
+        Callback when Fireflies detects a new active meeting
+
+        Args:
+            meeting: Meeting data from Fireflies API
+        """
+        transcript_id = meeting.get("transcriptId") or meeting.get("id")
+        meeting_title = meeting.get("title", "Fireflies Meeting")
+
+        logger.info(f"Auto-connecting to Fireflies meeting: {meeting_title}")
+
+        # Create a new session for this Fireflies meeting
+        meeting_id = await self.start_fireflies_meeting(
+            fireflies_transcript_id=transcript_id,
+            meeting_name=meeting_title
+        )
+
+        logger.info(f"Created session {meeting_id} for Fireflies meeting {transcript_id}")
+
+    async def start_local_transcription(
+        self,
+        meeting_name: str = "Local Transcription",
+        device_index: int = 2,  # BlackHole 2ch
+        language: str = "de"
+    ) -> str:
+        """
+        Start a local transcription session using BlackHole + Deepgram
+
+        Args:
+            meeting_name: Name for this session
+            device_index: Audio device index (0 = BlackHole 2ch)
+            language: Language code for transcription
+
+        Returns:
+            str: Unique meeting ID
+        """
+        # Get API key - first try settings, then fallback to env file
+        api_key = settings.deepgram_api_key
+        if not api_key:
+            from pathlib import Path
+            from dotenv import dotenv_values
+            env_file = Path(__file__).parent.parent / ".env"
+            if env_file.exists():
+                env_values = dotenv_values(env_file)
+                api_key = env_values.get('DEEPGRAM_API_KEY')
+
+        if not api_key:
+            raise ValueError("Deepgram API key not configured")
+
+        meeting_id = str(uuid.uuid4())
+        logger.info(f"Starting local transcription {meeting_id}: {meeting_name}")
+
+        # Create session
+        session = MeetingSession(meeting_id, meeting_name, "local")
+
+        # Initialize local transcription service
+        session.local_transcription = LocalTranscriptionService(
+            api_key=api_key,
+            on_transcript=lambda segment: self._on_transcript(meeting_id, segment),
+            device_index=device_index,
+            language=language
+        )
+
+        # Store session
+        self.sessions[meeting_id] = session
+
+        # Start transcription in background
+        asyncio.create_task(self._run_local_transcription(meeting_id))
+
+        return meeting_id
+
+    async def _run_local_transcription(self, meeting_id: str):
+        """Run local transcription in background"""
+        session = self.sessions.get(meeting_id)
+        if not session or not session.local_transcription:
+            return
+
+        try:
+            await session.local_transcription.start()
+        except Exception as e:
+            logger.error(f"Local transcription error: {e}")
+            # Notify connected clients
+            await self._broadcast_to_websockets(meeting_id, {
+                "type": "error",
+                "data": {"message": str(e)}
+            })
+
+    async def start_fireflies_meeting(
+        self,
+        fireflies_transcript_id: str,
+        meeting_name: str
+    ) -> str:
+        """
+        Start a meeting session using Fireflies Real-Time API
+
+        Args:
+            fireflies_transcript_id: Fireflies transcript ID
+            meeting_name: Name for this meeting
+
+        Returns:
+            str: Unique meeting ID
+        """
+        meeting_id = str(uuid.uuid4())
+        logger.info(f"Starting Fireflies meeting {meeting_id}: {meeting_name}")
+
+        # Create session
+        session = MeetingSession(meeting_id, meeting_name, "")
+        session.fireflies_transcript_id = fireflies_transcript_id
+
+        # Initialize Fireflies service
+        session.fireflies = FirefliesService(
+            api_key=settings.fireflies_api_key,
+            meeting_id=meeting_id,
+            on_transcript=lambda segment: self._on_transcript(meeting_id, segment),
+            on_connection_status=lambda status: self._on_fireflies_status(meeting_id, status)
+        )
+
+        # Store session
+        self.sessions[meeting_id] = session
+
+        # Connect to Fireflies Real-Time API
+        asyncio.create_task(session.fireflies.connect(fireflies_transcript_id))
+
+        return meeting_id
+
+    async def _on_fireflies_status(self, meeting_id: str, status: dict):
+        """Handle Fireflies connection status changes"""
+        session = self.sessions.get(meeting_id)
+        if not session:
+            return
+
+        status_type = status.get("status")
+        logger.info(f"Fireflies status for {meeting_id}: {status_type}")
+
+        # Broadcast status to connected clients
+        await self._broadcast_to_websockets(meeting_id, {
+            "type": "connection_status",
+            "data": status
+        })
 
     async def start_meeting(self, meeting_url: str, meeting_name: str) -> str:
         """
@@ -104,13 +281,17 @@ class MeetingManager:
         # Initialize Zoom bot
         session.zoom_bot = ZoomBot(meeting_url, meeting_id)
 
-        # Initialize transcription service
+        # Initialize transcription service (lazy loaded to avoid Python 3.9 issues)
         if settings.deepgram_api_key:
-            session.transcription = TranscriptionService(
-                api_key=settings.deepgram_api_key,
-                meeting_id=meeting_id,
-                on_transcript=lambda segment: self._on_transcript(meeting_id, segment)
-            )
+            TranscriptionService = _get_transcription_service()
+            if TranscriptionService:
+                session.transcription = TranscriptionService(
+                    api_key=settings.deepgram_api_key,
+                    meeting_id=meeting_id,
+                    on_transcript=lambda segment: self._on_transcript(meeting_id, segment)
+                )
+            else:
+                logger.warning("TranscriptionService not available (requires Python 3.10+)")
         else:
             logger.warning("Deepgram API key not configured - transcription disabled")
 
@@ -220,7 +401,15 @@ class MeetingManager:
 
         logger.info(f"Stopping meeting {meeting_id}")
 
-        # Stop transcription
+        # Stop local transcription
+        if session.local_transcription:
+            await session.local_transcription.stop()
+
+        # Stop Fireflies connection
+        if session.fireflies:
+            await session.fireflies.disconnect()
+
+        # Stop transcription (Deepgram)
         if session.transcription:
             await session.transcription.stop_streaming()
 
@@ -262,6 +451,9 @@ class MeetingManager:
             "speaker_stats": session.speaker_stats,
             "zoom_bot_status": session.zoom_bot.get_status() if session.zoom_bot else None,
             "transcription_status": session.transcription.get_status() if session.transcription else None,
+            "fireflies_status": session.fireflies.get_status() if session.fireflies else None,
+            "local_transcription_status": session.local_transcription.get_status() if session.local_transcription else None,
+            "transcription_mode": "local" if session.local_transcription else ("fireflies" if session.fireflies else "deepgram"),
             "active_connections": len(session.websockets)
         }
 
@@ -283,9 +475,11 @@ class MeetingManager:
                 "suggestions": []
             }
 
-        # Get full transcript
+        # Get full transcript (from Fireflies or Deepgram)
         full_transcript = ""
-        if session.transcription:
+        if session.fireflies:
+            full_transcript = session.fireflies.get_full_transcript()
+        elif session.transcription:
             full_transcript = session.transcription.get_full_transcript()
 
         # Build context

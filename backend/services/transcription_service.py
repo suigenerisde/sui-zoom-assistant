@@ -7,14 +7,22 @@ from typing import Optional, Callable, AsyncGenerator
 from datetime import datetime
 import json
 
-try:
-    from deepgram import Deepgram
-except ImportError:
-    logger = logging.getLogger(__name__)
-    logger.warning("Deepgram SDK not installed. Install with: pip install deepgram-sdk")
-    Deepgram = None
-
 logger = logging.getLogger(__name__)
+
+# Deepgram requires Python 3.10+ - lazy import to avoid syntax errors on 3.9
+Deepgram = None
+
+def _get_deepgram():
+    """Lazy load Deepgram SDK - requires Python 3.10+"""
+    global Deepgram
+    if Deepgram is None:
+        try:
+            from deepgram import Deepgram as DG
+            Deepgram = DG
+        except (ImportError, SyntaxError) as e:
+            logger.warning(f"Deepgram SDK not available: {e}. Requires Python 3.10+")
+            return None
+    return Deepgram
 
 
 class TranscriptionService:
@@ -39,14 +47,15 @@ class TranscriptionService:
             meeting_id: Unique meeting identifier
             on_transcript: Callback function for transcript events
         """
-        if not Deepgram:
-            raise ImportError("Deepgram SDK not installed")
+        DG = _get_deepgram()
+        if not DG:
+            raise ImportError("Deepgram SDK not available. Requires Python 3.10+")
 
         self.api_key = api_key
         self.meeting_id = meeting_id
         self.on_transcript = on_transcript
 
-        self.dg_client = Deepgram(api_key)
+        self.dg_client = DG(api_key)
         self.websocket = None
         self.is_streaming = False
 

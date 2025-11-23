@@ -1,24 +1,46 @@
 version: '3.8'
 
 services:
-  zoom-bot-api:
+  # Zoom Meeting SDK Bot - joins meetings and captures raw audio
+  zoom-bot:
+    build:
+      context: ./zoom-bot
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    environment:
+      - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
+      - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
+    volumes:
+      - ./zoom-bot:/tmp/meeting-sdk-linux-sample
+      - audio-socket:/tmp
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - zoom-assistant-network
+
+  # Backend API - receives audio from bot, transcribes via Deepgram
+  backend:
     build: ./backend
     ports:
       - "8000:8000"
     environment:
       - ZOOM_CLIENT_ID=${ZOOM_CLIENT_ID}
       - ZOOM_CLIENT_SECRET=${ZOOM_CLIENT_SECRET}
-      - ZOOM_BOT_JID=${ZOOM_BOT_JID}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
-      - N8N_TRANSCRIPT_WEBHOOK=${N8N_TRANSCRIPT_WEBHOOK}
-      - N8N_COMMAND_WEBHOOK=${N8N_COMMAND_WEBHOOK}
+      - N8N_TRANSCRIPT_WEBHOOK=${N8N_TRANSCRIPT_WEBHOOK:-}
+      - N8N_COMMAND_WEBHOOK=${N8N_COMMAND_WEBHOOK:-}
       - REDIS_URL=redis://redis:6379
+      - AUDIO_SOCKET_PATH=/tmp/meeting.sock
+    volumes:
+      - audio-socket:/tmp
     depends_on:
       - redis
     restart: unless-stopped
     networks:
       - zoom-assistant-network
 
+  # Redis for caching/state management
   redis:
     image: redis:7-alpine
     ports:
@@ -29,15 +51,16 @@ services:
     networks:
       - zoom-assistant-network
 
+  # Frontend UI
   frontend:
     build: ./frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_WS_URL=ws://backend:8000
     depends_on:
-      - zoom-bot-api
+      - backend
     restart: unless-stopped
     networks:
       - zoom-assistant-network
@@ -48,3 +71,4 @@ networks:
 
 volumes:
   redis-data:
+  audio-socket:
