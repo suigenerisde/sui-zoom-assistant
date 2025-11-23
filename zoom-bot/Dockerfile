@@ -43,6 +43,7 @@ RUN apt-get update  \
     pkgconf \
     tar \
     unzip \
+    xz-utils \
     zip
 
 # Install ALSA
