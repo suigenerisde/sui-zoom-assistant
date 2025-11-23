@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import MeetingDashboard from '@/components/MeetingDashboard'
+import MeetingDashboard from '../../components/MeetingDashboard'
 
 export default function DemoPage() {
   // Simulate meeting already started

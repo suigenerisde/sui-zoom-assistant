@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { sendCommand } from '@/lib/api'
+import { sendCommand } from '../lib/api'
 
 interface CommandInputProps {
   meetingId: string

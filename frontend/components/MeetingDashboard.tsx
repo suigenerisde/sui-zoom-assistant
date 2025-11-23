@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { stopMeeting, getMeetingStatus, getWebSocketUrl } from '@/lib/api'
-import { useWebSocket } from '@/hooks/useWebSocket'
-import { useMockWebSocket } from '@/hooks/useMockWebSocket'
+import { stopMeeting, getMeetingStatus, getWebSocketUrl } from '../lib/api'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { useMockWebSocket } from '../hooks/useMockWebSocket'
 import TranscriptPanel from './TranscriptPanel'
 import SuggestionsPanel from './SuggestionsPanel'
 import CommandInput from './CommandInput'

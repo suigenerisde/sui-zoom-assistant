@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { startMeeting, startLocalTranscription } from '@/lib/api'
+import { startMeeting, startLocalTranscription } from '../lib/api'
 
 interface StartMeetingFormProps {
   onMeetingStarted: (meetingId: string) => void

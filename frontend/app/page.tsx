@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import MeetingDashboard from '@/components/MeetingDashboard'
-import StartMeetingForm from '@/components/StartMeetingForm'
+import MeetingDashboard from '../components/MeetingDashboard'
+import StartMeetingForm from '../components/StartMeetingForm'
 
 export default function Home() {
   const [meetingId, setMeetingId] = useState<string | null>(null)
