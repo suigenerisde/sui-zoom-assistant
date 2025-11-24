@@ -216,6 +216,7 @@ class DeepgramTranscriptionService:
         """Handle error event."""
         error = kwargs.get('error') or (args[1] if len(args) > 1 else "Unknown error")
         logger.error(f"Deepgram error: {error}")
+        self.is_connected = False  # Mark as disconnected on error
         self._notify_status("error")
 
     def _on_close(self, *args, **kwargs):

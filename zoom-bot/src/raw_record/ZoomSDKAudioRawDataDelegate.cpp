@@ -13,6 +13,15 @@ void ZoomSDKAudioRawDataDelegate::onMixedAudioRawDataReceived(AudioRawData *data
 
     // write to socket
     if (m_transcribe) {
+        // Log audio format info periodically (every 1000 chunks)
+        static int chunk_count = 0;
+        if (chunk_count++ % 1000 == 0) {
+            stringstream ss;
+            ss << "Audio format: " << data->GetSampleRate() << "Hz, "
+               << data->GetChannelNum() << " channels, "
+               << data->GetBufferLen() << " bytes/chunk";
+            Log::info(ss.str());
+        }
         server.writeBuf(data->GetBuffer(), data->GetBufferLen());
         return;
     }

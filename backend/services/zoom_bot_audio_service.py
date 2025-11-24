@@ -8,11 +8,63 @@ import asyncio
 import logging
 import os
 import socket
+import struct
 from typing import Optional, Callable, Dict, Any
 
 from .deepgram_service import DeepgramTranscriptionService
 
 logger = logging.getLogger(__name__)
+
+
+def convert_audio_for_deepgram(
+    audio_data: bytes,
+    input_sample_rate: int = 32000,
+    input_channels: int = 2,
+    output_sample_rate: int = 16000,
+    output_channels: int = 1
+) -> bytes:
+    """
+    Convert audio from Zoom format to Deepgram format.
+
+    Zoom SDK typically outputs: 32kHz, stereo, 16-bit PCM
+    Deepgram expects: 16kHz, mono, 16-bit PCM (linear16)
+
+    Args:
+        audio_data: Raw PCM audio bytes (16-bit samples)
+        input_sample_rate: Source sample rate (default 32000 for Zoom)
+        input_channels: Source channels (default 2 for stereo)
+        output_sample_rate: Target sample rate (default 16000 for Deepgram)
+        output_channels: Target channels (default 1 for mono)
+
+    Returns:
+        Converted audio bytes
+    """
+    if not audio_data:
+        return audio_data
+
+    # Parse 16-bit samples
+    num_samples = len(audio_data) // 2
+    samples = struct.unpack(f'<{num_samples}h', audio_data)
+
+    # Convert stereo to mono (average channels)
+    if input_channels == 2 and output_channels == 1:
+        mono_samples = []
+        for i in range(0, len(samples), 2):
+            if i + 1 < len(samples):
+                # Average left and right channels
+                mono_samples.append((samples[i] + samples[i + 1]) // 2)
+            else:
+                mono_samples.append(samples[i])
+        samples = mono_samples
+
+    # Downsample if needed (simple decimation - take every Nth sample)
+    if input_sample_rate != output_sample_rate:
+        ratio = input_sample_rate // output_sample_rate
+        if ratio > 1:
+            samples = samples[::ratio]
+
+    # Pack back to bytes
+    return struct.pack(f'<{len(samples)}h', *samples)
 
 
 class ZoomBotAudioService:
@@ -184,9 +236,12 @@ class ZoomBotAudioService:
                     if chunks_received == 1 or chunks_received % 100 == 0:
                         logger.info(f"Received audio chunk #{chunks_received}: {len(data)} bytes (total: {bytes_received} bytes)")
 
+                    # Convert audio from Zoom format (32kHz stereo) to Deepgram format (16kHz mono)
+                    converted_data = convert_audio_for_deepgram(data)
+
                     # Forward to Deepgram
                     if self.deepgram_service and self.deepgram_service.is_connected:
-                        await self.deepgram_service.send_audio(data)
+                        await self.deepgram_service.send_audio(converted_data)
                     else:
                         logger.warning("Cannot forward audio - Deepgram not connected")
 
