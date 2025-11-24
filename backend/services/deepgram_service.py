@@ -74,8 +74,7 @@ class DeepgramTranscriptionService:
                 language=self.language,
                 smart_format=True,  # Auto-punctuation and formatting
                 interim_results=True,  # Get results while speaking
-                utterance_end_ms=1000,  # Detect end of utterance
-                vad_events=True,  # Voice activity detection
+                endpointing=300,  # Detect end of utterance (replaced utterance_end_ms)
                 encoding="linear16",
                 sample_rate=16000,
                 channels=1,
