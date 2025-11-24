@@ -89,8 +89,8 @@ class DeepgramTranscriptionService:
             self.connection.on(LiveTranscriptionEvents.Error, self._on_error)
             self.connection.on(LiveTranscriptionEvents.Close, self._on_close)
 
-            # Start the connection
-            if await self.connection.start(options):
+            # Start the connection (synchronous in SDK v3)
+            if self.connection.start(options):
                 self.is_connected = True
                 logger.info(f"Deepgram connection established for meeting {self.meeting_id}")
                 self._notify_status("connected")
@@ -120,7 +120,7 @@ class DeepgramTranscriptionService:
             return False
 
         try:
-            await self.connection.send(audio_data)
+            self.connection.send(audio_data)  # Synchronous in SDK v3
             return True
         except Exception as e:
             logger.error(f"Error sending audio to Deepgram: {e}")
@@ -130,7 +130,7 @@ class DeepgramTranscriptionService:
         """Disconnect from Deepgram."""
         if self.connection:
             try:
-                await self.connection.finish()
+                self.connection.finish()  # Synchronous in SDK v3
                 logger.info(f"Disconnected from Deepgram for meeting {self.meeting_id}")
             except Exception as e:
                 logger.error(f"Error disconnecting from Deepgram: {e}")
