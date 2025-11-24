@@ -1,7 +1,12 @@
 #include "ZoomSDKAudioRawDataDelegate.h"
 
 
-ZoomSDKAudioRawDataDelegate::ZoomSDKAudioRawDataDelegate(bool useMixedAudio = true, bool transcribe = false) : m_useMixedAudio(useMixedAudio), m_transcribe(transcribe){}
+ZoomSDKAudioRawDataDelegate::ZoomSDKAudioRawDataDelegate(bool useMixedAudio = true, bool transcribe = false) : m_useMixedAudio(useMixedAudio), m_transcribe(transcribe){
+    if (m_transcribe) {
+        Log::info("Starting socket server for audio transcription...");
+        server.start();
+    }
+}
 
 void ZoomSDKAudioRawDataDelegate::onMixedAudioRawDataReceived(AudioRawData *data) {
     if (!m_useMixedAudio) return;

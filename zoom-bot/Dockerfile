@@ -88,6 +88,7 @@ RUN mkdir -p lib/zoomsdk \
     && xz -d /tmp/zoom-sdk.tar.xz \
     && tar -xf /tmp/zoom-sdk.tar -C lib/zoomsdk \
     && rm /tmp/zoom-sdk.tar \
+    && ln -s libmeetingsdk.so lib/zoomsdk/libmeetingsdk.so.1 \
     && ls -la lib/zoomsdk/
 
 # Copy source files
