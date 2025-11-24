@@ -19,20 +19,20 @@ logger = logging.getLogger(__name__)
 def convert_audio_for_deepgram(
     audio_data: bytes,
     input_sample_rate: int = 32000,
-    input_channels: int = 2,
+    input_channels: int = 1,  # Zoom SDK outputs mono!
     output_sample_rate: int = 16000,
     output_channels: int = 1
 ) -> bytes:
     """
     Convert audio from Zoom format to Deepgram format.
 
-    Zoom SDK typically outputs: 32kHz, stereo, 16-bit PCM
+    Zoom SDK outputs: 32kHz, mono, 16-bit PCM
     Deepgram expects: 16kHz, mono, 16-bit PCM (linear16)
 
     Args:
         audio_data: Raw PCM audio bytes (16-bit samples)
         input_sample_rate: Source sample rate (default 32000 for Zoom)
-        input_channels: Source channels (default 2 for stereo)
+        input_channels: Source channels (default 1 for mono - Zoom SDK)
         output_sample_rate: Target sample rate (default 16000 for Deepgram)
         output_channels: Target channels (default 1 for mono)
 
@@ -46,7 +46,7 @@ def convert_audio_for_deepgram(
     num_samples = len(audio_data) // 2
     samples = struct.unpack(f'<{num_samples}h', audio_data)
 
-    # Convert stereo to mono (average channels)
+    # Convert stereo to mono if needed (average channels)
     if input_channels == 2 and output_channels == 1:
         mono_samples = []
         for i in range(0, len(samples), 2):
@@ -57,7 +57,7 @@ def convert_audio_for_deepgram(
                 mono_samples.append(samples[i])
         samples = mono_samples
 
-    # Downsample if needed (simple decimation - take every Nth sample)
+    # Downsample from 32kHz to 16kHz (take every 2nd sample)
     if input_sample_rate != output_sample_rate:
         ratio = input_sample_rate // output_sample_rate
         if ratio > 1:
