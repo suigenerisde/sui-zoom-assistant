@@ -161,6 +161,8 @@ class ZoomBotAudioService:
         """Receive audio data from Zoom Bot and forward to Deepgram."""
         loop = asyncio.get_event_loop()
         buffer_size = 4096  # Match Zoom Bot's buffer size
+        bytes_received = 0
+        chunks_received = 0
 
         try:
             while self.is_running and self.client_socket:
@@ -170,13 +172,23 @@ class ZoomBotAudioService:
 
                     if not data:
                         logger.info("Zoom Bot disconnected from audio socket")
+                        logger.info(f"Total audio received: {bytes_received} bytes in {chunks_received} chunks")
                         self.is_connected = False
                         self._notify_status("bot_disconnected")
                         break
 
+                    bytes_received += len(data)
+                    chunks_received += 1
+
+                    # Log first chunk and then every 100 chunks
+                    if chunks_received == 1 or chunks_received % 100 == 0:
+                        logger.info(f"Received audio chunk #{chunks_received}: {len(data)} bytes (total: {bytes_received} bytes)")
+
                     # Forward to Deepgram
                     if self.deepgram_service and self.deepgram_service.is_connected:
                         await self.deepgram_service.send_audio(data)
+                    else:
+                        logger.warning("Cannot forward audio - Deepgram not connected")
 
                 except asyncio.CancelledError:
                     break
