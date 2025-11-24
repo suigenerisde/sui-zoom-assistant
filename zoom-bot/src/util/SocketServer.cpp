@@ -53,25 +53,29 @@ void* SocketServer::run() {
     Log::info("started socket server");
     Log::info("listening on socket " + c_socketPath);
 
-    char buffer[c_bufferSize];
-
     for (;;) {
+        Log::info("Waiting for client connection...");
         m_dataSocket = accept(m_listenSocket, NULL, NULL);
         if (m_dataSocket == -1) {
             Log::error("failed to accept connection");
+            m_clientConnected = false;
             return nullptr;
         }
 
-        for(;;) {
-            auto ret = read(m_dataSocket, buffer, 5);
-            if (ret == -1) {
-                Log::error("failed to read socket");
-                return nullptr;
-            }
+        Log::success("Client connected to audio socket!");
+        m_clientConnected = true;
 
-            buffer[c_bufferSize - 1] = 0;
+        // Keep connection open - audio data is written via writeBuf()
+        // Just wait for client disconnect
+        char buffer[c_bufferSize];
+        for(;;) {
+            auto ret = read(m_dataSocket, buffer, c_bufferSize);
+            if (ret <= 0) {
+                Log::info("Client disconnected from audio socket");
+                m_clientConnected = false;
+                break;  // Break inner loop to accept new connection
+            }
         }
-        return nullptr;
     }
 
     return nullptr;
@@ -83,23 +87,35 @@ bool SocketServer::isReady() {
 
 
 int SocketServer::writeBuf(const char* buf, int len) {
+    if (!m_clientConnected || m_dataSocket <= 0) {
+        return -1;  // No client connected, silently skip
+    }
     auto ret = write(m_dataSocket, buf, len);
     if (ret == -1) {
         Log::error("failed to write data");
-        exit(EXIT_FAILURE);
+        m_clientConnected = false;
+        return -1;
     }
 
     return 0;
 }
 
 int SocketServer::writeBuf(const unsigned char* buf, int len) {
+    if (!m_clientConnected || m_dataSocket <= 0) {
+        return -1;  // No client connected, silently skip
+    }
     auto ret = write(m_dataSocket, buf, len);
     if (ret == -1) {
         Log::error("failed to write data");
-        exit(EXIT_FAILURE);
+        m_clientConnected = false;
+        return -1;
     }
 
     return 0;
+}
+
+bool SocketServer::hasClient() {
+    return m_clientConnected;
 }
 
 int SocketServer::writeStr(const string& str) {

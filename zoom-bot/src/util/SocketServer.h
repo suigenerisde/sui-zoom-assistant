@@ -26,13 +26,14 @@ class SocketServer : public Singleton<SocketServer> {
 
     struct sockaddr_un m_addr;
 
-    int m_listenSocket;
-    int m_dataSocket;
+    int m_listenSocket = 0;
+    int m_dataSocket = 0;
 
-    pthread_t m_pid;
+    pthread_t m_pid = 0;
     pthread_mutex_t m_mutex;
 
-    bool ready;
+    bool ready = false;
+    bool m_clientConnected = false;
 
     void* run();
     static void* threadCreate(void* obj);
@@ -49,6 +50,7 @@ public:
     int writeStr(const string& str);
 
     bool isReady();
+    bool hasClient();
 
     void cleanup();
 };
