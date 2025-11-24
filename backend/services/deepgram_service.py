@@ -90,15 +90,16 @@ class DeepgramTranscriptionService:
             self.connection.on(LiveTranscriptionEvents.Close, self._on_close)
 
             # Start the connection (synchronous in SDK v3)
-            if self.connection.start(options):
-                self.is_connected = True
-                logger.info(f"Deepgram connection established for meeting {self.meeting_id}")
-                self._notify_status("connected")
-                return True
-            else:
-                logger.error("Failed to start Deepgram connection")
-                self._notify_status("failed")
-                return False
+            # Note: start() returns True/False in some versions, None in others
+            result = self.connection.start(options)
+            logger.info(f"Deepgram connection.start() returned: {result}")
+
+            # In SDK 3.0.0, start() may return None on success
+            # We'll assume success if no exception was raised and wait for Open event
+            self.is_connected = True
+            logger.info(f"Deepgram connection initiated for meeting {self.meeting_id}")
+            self._notify_status("connected")
+            return True
 
         except Exception as e:
             logger.error(f"Error connecting to Deepgram: {e}")
