@@ -88,7 +88,6 @@ class DeepgramTranscriptionService:
             self.connection.on(LiveTranscriptionEvents.Transcript, self._on_transcript)
             self.connection.on(LiveTranscriptionEvents.Error, self._on_error)
             self.connection.on(LiveTranscriptionEvents.Close, self._on_close)
-            self.connection.on(LiveTranscriptionEvents.UtteranceEnd, self._on_utterance_end)
 
             # Start the connection
             if await self.connection.start(options):
