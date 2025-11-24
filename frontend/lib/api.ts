@@ -60,3 +60,29 @@ export const getWebSocketUrl = (meetingId: string): string => {
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'
   return `${wsUrl}/ws/${meetingId}`
 }
+
+// Zoom Bot API (new flow)
+export interface JoinBotRequest {
+  join_url: string
+  display_name?: string
+}
+
+export const joinBot = async (data: JoinBotRequest) => {
+  const response = await api.post('/api/bot/join', data)
+  return response.data
+}
+
+export const leaveBot = async () => {
+  const response = await api.post('/api/bot/leave')
+  return response.data
+}
+
+export const getBotStatus = async () => {
+  const response = await api.get('/api/bot/status')
+  return response.data
+}
+
+export const getBotTranscript = async () => {
+  const response = await api.get('/api/bot/transcript')
+  return response.data
+}
