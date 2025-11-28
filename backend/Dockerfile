@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+# Copy Docker CLI from official image
+COPY --from=docker:cli /usr/local/bin/docker /usr/local/bin/docker
+
 WORKDIR /app
 
 # Install system dependencies
